@@ -1,0 +1,186 @@
+// MaxReport Pro - Database Schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================
+// USERS
+// ============================================
+
+model User {
+  id            String   @id @default(cuid())
+  name          String
+  email         String   @unique
+  password      String
+  role          String   @default("technician")
+  avatar        String?
+  phone         String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  
+  reports       Report[]
+}
+
+// ============================================
+// REPORTS
+// ============================================
+
+model Report {
+  id            String   @id @default(cuid())
+  reportNumber  String   @unique
+  status        String   @default("completed")
+  
+  // General Data
+  date          String
+  startTime     String
+  endTime       String?
+  shift         String?
+  weather       String?
+  ddsTheme      String   // Obrigatório
+  
+  // Technician (stored as name for simplicity)
+  technicianName String?
+  
+  // Signature (base64 image)
+  signaturePhoto String?
+  
+  // Created by user
+  createdById   String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  
+  // Relations
+  createdBy     User?    @relation(fields: [createdById], references: [id])
+  machines      Machine[]
+  
+  @@index([date])
+  @@index([shift])
+  @@index([technicianName])
+}
+
+// ============================================
+// MACHINES
+// ============================================
+
+model Machine {
+  id              String   @id @default(cuid())
+  reportId        String
+  
+  // Equipment Info
+  equipmentName   String?
+  hourMeter       String?  // Obrigatório
+  location        String?  // Obrigatório
+  machinePhoto    String?  // Base64 image
+  
+  // Maintenance Details
+  maintenanceType String?
+  priority        String   @default("normal")
+  downtimeTime    String?  // Formato 00:00:00 (mudou de downtimeHours)
+  
+  // Maintenance Categories (stored as JSON array)
+  correctiveCategories  String?  // JSON array
+  correctiveOther       String?
+  // Removido: preventiveInterval, preventiveCategories, preventiveOther
+  programadaEvent       String?
+  programadaCategories  String?  // JSON array
+  programadaOther       String?
+  
+  // Download
+  download        Boolean  @default(false)
+  downloadPhoto   String?  // Base64 image
+  
+  // Conclusion
+  conclusao       String?
+  
+  // Removido: interferencia
+  
+  // Pending items
+  pendingItems    String?
+  
+  // Track completion
+  isComplete      Boolean  @default(false)
+  
+  // Relations
+  report          Report   @relation(fields: [reportId], references: [id], onDelete: Cascade)
+  services        Service[]
+  desvios         Desvio[]
+  displacements   Displacement[]
+  
+  @@index([reportId])
+}
+
+// ============================================
+// SERVICES
+// ============================================
+
+model Service {
+  id            String   @id @default(cuid())
+  machineId     String
+  description   String
+  
+  // Relations
+  machine       Machine  @relation(fields: [machineId], references: [id], onDelete: Cascade)
+  photos        Photo[]
+  
+  @@index([machineId])
+}
+
+// ============================================
+// PHOTOS
+// ============================================
+
+model Photo {
+  id              String   @id @default(cuid())
+  serviceId       String
+  type            String   // before, after, general
+  imageData       String   // Base64
+  editedImageData String?  // Base64 after editing
+  annotations     String?  // JSON annotations
+  
+  // Relations
+  service         Service  @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+  
+  @@index([serviceId])
+}
+
+// ============================================
+// DESVIOS (mudou de Interventions)
+// ============================================
+
+model Desvio {
+  id            String   @id @default(cuid())
+  machineId     String
+  description   String
+  time          String
+  endTime       String?
+  
+  // Relations
+  machine       Machine  @relation(fields: [machineId], references: [id], onDelete: Cascade)
+  
+  @@index([machineId])
+}
+
+// ============================================
+// DISPLACEMENTS
+// ============================================
+
+model Displacement {
+  id            String   @id @default(cuid())
+  machineId     String
+  from          String
+  to            String
+  startTime     String
+  endTime       String
+  observacao    String?  // Novo campo de observação
+  
+  // Relations
+  machine       Machine  @relation(fields: [machineId], references: [id], onDelete: Cascade)
+  
+  @@index([machineId])
+}
