@@ -567,6 +567,8 @@ function TemperatureDashboard({
         case '2026': result = result.filter(d => d.parsedDate.getFullYear() === 2026); break;
       }
     }
+    // Ignorar registros onde TODAS as temperaturas são zero
+    result = result.filter(d => d.tempBelow84 > 0 || d.temp84to96 > 0 || d.temp97Above > 0);
     return result;
   }, [data, periodFilter, useCustomDate, startDate, endDate, machineFilter]);
 
