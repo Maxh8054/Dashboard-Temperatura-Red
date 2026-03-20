@@ -202,10 +202,11 @@ const parseNumber = (value: unknown): number => {
 
 // ==================== TOOLTIPS ====================
 
-function TempTrendCustomTooltip({ active, payload, label, chartData }: { active?: boolean; payload?: any[]; label?: string; chartData: any[] }) {
+function TempTrendCustomTooltip({ active, payload, label, rawData }: { active?: boolean; payload?: any[]; label?: string; rawData: TempRecord[] }) {
   if (!active || !payload || !label) return null;
   
-  const recordsForDate = chartData.filter(d => d.displayDate === label);
+  // Filtrar dados brutos pela data para mostrar breakdown por máquina
+  const recordsForDate = rawData.filter(d => d.dateStr === label);
   const totalBelow84 = recordsForDate.reduce((sum, r) => sum + r.tempBelow84, 0);
   const total84to96 = recordsForDate.reduce((sum, r) => sum + r.temp84to96, 0);
   const total97Above = recordsForDate.reduce((sum, r) => sum + r.temp97Above, 0);
@@ -226,7 +227,7 @@ function TempTrendCustomTooltip({ active, payload, label, chartData }: { active?
           <p className="text-xs font-medium text-slate-500 mb-1">Por Máquina:</p>
           {Object.entries(machineData).map(([machine, data]) => (
             <div key={machine} className="text-xs mb-1">
-              <span className="font-medium" style={{ color: '#FF6600' }}>{machine}:</span>
+              <span className="font-medium" style={{ color: MACHINE_COLORS[machine] || '#FF6600' }}>{machine}:</span>
               {' '}<span className="text-emerald-600">{data.below84.toFixed(1)}h</span>
               {' / '}<span className="text-amber-600">{data.mid.toFixed(1)}h</span>
               {' / '}<span className="text-red-600">{data.above.toFixed(1)}h</span>
@@ -234,8 +235,75 @@ function TempTrendCustomTooltip({ active, payload, label, chartData }: { active?
           ))}
         </div>
       )}
+      {Object.keys(machineData).length === 1 && (
+        <div className="mb-2">
+          <p className="text-xs font-medium text-slate-500 mb-1">Máquina: <span style={{ color: MACHINE_COLORS[Object.keys(machineData)[0]] || '#FF6600' }}>{Object.keys(machineData)[0]}</span></p>
+        </div>
+      )}
       <div className="pt-1 border-t border-slate-100">
         <p className="text-xs font-medium text-slate-500 mb-1">Total:</p>
+        <div className="flex gap-3 text-xs">
+          <span className="text-emerald-600 font-medium">&lt;84°C: {totalBelow84.toFixed(1)}h</span>
+          <span className="text-amber-600 font-medium">84-96°C: {total84to96.toFixed(1)}h</span>
+          <span className="text-red-600 font-medium">≥97°C: {total97Above.toFixed(1)}h</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Tooltip para modo mensal - mostra breakdown por máquina dentro do mês (todos os anos)
+function TempMonthlyTooltip({ active, payload, label, rawData }: { active?: boolean; payload?: any[]; label?: string; rawData: TempRecord[] }) {
+  if (!active || !payload || !label) return null;
+  
+  const monthNames = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
+  const monthNum = monthNames.indexOf(label || '') + 1;
+  
+  // Filtrar dados do mês (todos os anos)
+  const recordsForMonth = rawData.filter(d => d.parsedDate.getMonth() + 1 === monthNum);
+  
+  const totalBelow84 = recordsForMonth.reduce((sum, r) => sum + r.tempBelow84, 0);
+  const total84to96 = recordsForMonth.reduce((sum, r) => sum + r.temp84to96, 0);
+  const total97Above = recordsForMonth.reduce((sum, r) => sum + r.temp97Above, 0);
+  
+  // Agrupar por máquina (soma todos os anos daquela máquina naquele mês)
+  const machineData: Record<string, { below84: number; mid: number; above: number }> = {};
+  recordsForMonth.forEach(r => {
+    if (!machineData[r.machine]) machineData[r.machine] = { below84: 0, mid: 0, above: 0 };
+    machineData[r.machine].below84 += r.tempBelow84;
+    machineData[r.machine].mid += r.temp84to96;
+    machineData[r.machine].above += r.temp97Above;
+  });
+  
+  // Contar quantos anos têm dados
+  const yearsWithData = [...new Set(recordsForMonth.map(r => r.parsedDate.getFullYear()))].sort();
+  
+  return (
+    <div className="bg-white p-3 border border-slate-200 rounded-lg shadow-lg max-w-xs">
+      <p className="font-semibold text-slate-700 mb-2 border-b pb-1">{label}</p>
+      {yearsWithData.length > 1 && (
+        <p className="text-xs text-slate-400 mb-2">Anos: {yearsWithData.join(', ')}</p>
+      )}
+      {Object.keys(machineData).length > 1 && (
+        <div className="mb-2">
+          <p className="text-xs font-medium text-slate-500 mb-1">Por Máquina:</p>
+          {Object.entries(machineData).map(([machine, data]) => (
+            <div key={machine} className="text-xs mb-1">
+              <span className="font-medium" style={{ color: MACHINE_COLORS[machine] || '#FF6600' }}>{machine}:</span>
+              {' '}<span className="text-emerald-600">{data.below84.toFixed(1)}h</span>
+              {' / '}<span className="text-amber-600">{data.mid.toFixed(1)}h</span>
+              {' / '}<span className="text-red-600">{data.above.toFixed(1)}h</span>
+            </div>
+          ))}
+        </div>
+      )}
+      {Object.keys(machineData).length === 1 && (
+        <div className="mb-2">
+          <p className="text-xs font-medium text-slate-500 mb-1">Máquina: <span style={{ color: MACHINE_COLORS[Object.keys(machineData)[0]] || '#FF6600' }}>{Object.keys(machineData)[0]}</span></p>
+        </div>
+      )}
+      <div className="pt-1 border-t border-slate-100">
+        <p className="text-xs font-medium text-slate-500 mb-1">Total do Mês:</p>
         <div className="flex gap-3 text-xs">
           <span className="text-emerald-600 font-medium">&lt;84°C: {totalBelow84.toFixed(1)}h</span>
           <span className="text-amber-600 font-medium">84-96°C: {total84to96.toFixed(1)}h</span>
@@ -343,20 +411,17 @@ function TemperatureDashboard({
   
   const activeMachines = useMemo(() => [...new Set(data.map(d => d.machine))].sort(), [data]);
   
+  // Meses disponíveis (1-12) baseado nos dados
   const availableMonths = useMemo(() => {
-    const months = new Set<string>();
+    const months = new Set<number>();
     data.forEach(d => {
-      const monthKey = `${d.parsedDate.getFullYear()}-${String(d.parsedDate.getMonth() + 1).padStart(2, '0')}`;
-      months.add(monthKey);
+      months.add(d.parsedDate.getMonth() + 1); // 1-12
     });
     const monthNames = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
-    return Array.from(months).sort().map(m => {
-      const monthNum = parseInt(m.split('-')[1]);
-      return {
-        value: m,
-        label: monthNames[monthNum - 1]
-      };
-    });
+    return Array.from(months).sort((a, b) => a - b).map(m => ({
+      value: m.toString(),
+      label: monthNames[m - 1]
+    }));
   }, [data]);
 
   const availableYears = useMemo(() => {
@@ -376,13 +441,8 @@ function TemperatureDashboard({
   const [tableMachineFilter, setTableMachineFilter] = useState('all');
   const [tableMonthFilter, setTableMonthFilter] = useState('all');
   const [tableStatusFilter, setTableStatusFilter] = useState('all');
+  const [chartViewMode, setChartViewMode] = useState<'date' | 'month'>('date');
   
-  useEffect(() => {
-    if (availableMonths.length > 0 && selectedChartMonth === 'all') {
-      setSelectedChartMonth(availableMonths[availableMonths.length - 1].value);
-    }
-  }, [availableMonths, selectedChartMonth]);
-
   useEffect(() => {
     if (availableYears.length > 0 && selectedChartYear === 'all') {
       setSelectedChartYear(availableYears[availableYears.length - 1].value);
@@ -516,19 +576,100 @@ function TemperatureDashboard({
     ];
   }, [stats]);
 
-  const chartData = useMemo(() => {
+  // Dados brutos para o tooltip (com breakdown por máquina)
+  const rawChartData = useMemo(() => {
     let result = filteredData;
     if (selectedChartYear !== 'all') {
       result = result.filter(d => d.parsedDate.getFullYear() === parseInt(selectedChartYear));
     }
     if (selectedChartMonth !== 'all') {
-      result = result.filter(d => {
-        const monthKey = `${d.parsedDate.getFullYear()}-${String(d.parsedDate.getMonth() + 1).padStart(2, '0')}`;
-        return monthKey === selectedChartMonth;
-      });
+      result = result.filter(d => d.parsedDate.getMonth() + 1 === parseInt(selectedChartMonth));
     }
-    return result.map(d => ({ ...d, displayDate: d.dateStr }));
+    return result;
   }, [filteredData, selectedChartMonth, selectedChartYear]);
+
+  // Dados agrupados por data (somando todas as máquinas)
+  const chartData = useMemo(() => {
+    const grouped: Record<string, {
+      displayDate: string;
+      date: Date;
+      tempBelow84: number;
+      temp84to96: number;
+      temp97Above: number;
+      machines: string[];
+    }> = {};
+
+    rawChartData.forEach(d => {
+      const key = d.dateStr;
+      if (!grouped[key]) {
+        grouped[key] = {
+          displayDate: d.dateStr,
+          date: d.date,
+          tempBelow84: 0,
+          temp84to96: 0,
+          temp97Above: 0,
+          machines: []
+        };
+      }
+      grouped[key].tempBelow84 += d.tempBelow84;
+      grouped[key].temp84to96 += d.temp84to96;
+      grouped[key].temp97Above += d.temp97Above;
+      if (!grouped[key].machines.includes(d.machine)) {
+        grouped[key].machines.push(d.machine);
+      }
+    });
+
+    // Ordenar por data
+    return Object.values(grouped).sort((a, b) => a.date.getTime() - b.date.getTime());
+  }, [rawChartData]);
+
+  // Dados agrupados por mês (para modo mensal) - soma TODOS os anos
+  const monthlyChartData = useMemo(() => {
+    const monthNames = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
+    
+    // Usar todos os dados filtrados (sem filtro de ano no modo mensal)
+    const dataToUse = filteredData;
+    
+    // Agrupar por mês (1-12)
+    const grouped: Record<number, {
+      month: string;
+      monthNum: number;
+      tempBelow84: number;
+      temp84to96: number;
+      temp97Above: number;
+      machines: string[];
+    }> = {};
+    
+    // Inicializar todos os meses
+    for (let i = 1; i <= 12; i++) {
+      grouped[i] = {
+        month: monthNames[i - 1],
+        monthNum: i,
+        tempBelow84: 0,
+        temp84to96: 0,
+        temp97Above: 0,
+        machines: []
+      };
+    }
+    
+    // Somar dados por mês (todos os anos)
+    dataToUse.forEach(d => {
+      const monthNum = d.parsedDate.getMonth() + 1;
+      grouped[monthNum].tempBelow84 += d.tempBelow84;
+      grouped[monthNum].temp84to96 += d.temp84to96;
+      grouped[monthNum].temp97Above += d.temp97Above;
+      if (!grouped[monthNum].machines.includes(d.machine)) {
+        grouped[monthNum].machines.push(d.machine);
+      }
+    });
+    
+    return Object.values(grouped).sort((a, b) => a.monthNum - b.monthNum);
+  }, [filteredData]);
+
+  // Dados brutos para tooltip mensal (para breakdown por máquina)
+  const monthlyRawData = useMemo(() => {
+    return filteredData;
+  }, [filteredData]);
 
   const top5HighTemp = useMemo(() => {
     return [...filteredData].sort((a, b) => b.temp97Above - a.temp97Above).slice(0, 5);
@@ -673,40 +814,79 @@ function TemperatureDashboard({
                     </CardTitle>
                   </div>
                   <div className="flex flex-wrap items-center gap-3">
-                    <div className="flex items-center gap-1">
-                      <span className="text-xs text-slate-500">Ano:</span>
-                      <Select value={selectedChartYear} onValueChange={setSelectedChartYear}>
-                        <SelectTrigger className="w-[90px]"><SelectValue /></SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="all">Todos</SelectItem>
-                          {availableYears.map(y => <SelectItem key={y.value} value={y.value}>{y.label}</SelectItem>)}
-                        </SelectContent>
-                      </Select>
+                    {/* Botão de alternância de modo */}
+                    <div className="flex items-center gap-1 bg-slate-100 rounded-lg p-1">
+                      <Button
+                        size="sm"
+                        variant={chartViewMode === 'date' ? 'default' : 'ghost'}
+                        onClick={() => setChartViewMode('date')}
+                        className={`text-xs h-7 px-3 ${chartViewMode === 'date' ? 'text-white' : 'text-slate-600'}`}
+                        style={chartViewMode === 'date' ? { backgroundColor: '#FF6600' } : {}}
+                      >
+                        Por Data
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant={chartViewMode === 'month' ? 'default' : 'ghost'}
+                        onClick={() => setChartViewMode('month')}
+                        className={`text-xs h-7 px-3 ${chartViewMode === 'month' ? 'text-white' : 'text-slate-600'}`}
+                        style={chartViewMode === 'month' ? { backgroundColor: '#FF6600' } : {}}
+                      >
+                        Por Mês
+                      </Button>
                     </div>
-                    <div className="flex items-center gap-1">
-                      <span className="text-xs text-slate-500">Mês:</span>
-                      <Select value={selectedChartMonth} onValueChange={setSelectedChartMonth}>
-                        <SelectTrigger className="w-[120px]"><SelectValue /></SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="all">Todos</SelectItem>
-                          {availableMonths.map(m => <SelectItem key={m.value} value={m.value}>{m.label}</SelectItem>)}
-                        </SelectContent>
-                      </Select>
-                    </div>
+                    {/* Filtros de Ano e Mês só aparecem no modo "Por Data" */}
+                    {chartViewMode === 'date' && (
+                      <>
+                        <div className="flex items-center gap-1">
+                          <span className="text-xs text-slate-500">Ano:</span>
+                          <Select value={selectedChartYear} onValueChange={setSelectedChartYear}>
+                            <SelectTrigger className="w-[90px]"><SelectValue /></SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="all">Todos</SelectItem>
+                              {availableYears.map(y => <SelectItem key={y.value} value={y.value}>{y.label}</SelectItem>)}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <div className="flex items-center gap-1">
+                          <span className="text-xs text-slate-500">Mês:</span>
+                          <Select value={selectedChartMonth} onValueChange={setSelectedChartMonth}>
+                            <SelectTrigger className="w-[120px]"><SelectValue /></SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="all">Todos</SelectItem>
+                              {availableMonths.map(m => <SelectItem key={m.value} value={m.value}>{m.label}</SelectItem>)}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      </>
+                    )}
                   </div>
                 </div>
               </CardHeader>
               <CardContent>
                 <div className="h-[300px]">
-                  {chartData.length === 0 ? (
+                  {chartViewMode === 'date' && chartData.length === 0 ? (
                     <div className="h-full flex items-center justify-center text-slate-400"><p>Selecione filtros para ver os dados</p></div>
-                  ) : (
+                  ) : chartViewMode === 'date' ? (
                     <ResponsiveContainer width="100%" height="100%">
                       <AreaChart data={chartData}>
                         <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
                         <XAxis dataKey="displayDate" tick={{ fontSize: 10 }} angle={-45} textAnchor="end" height={70} />
                         <YAxis tick={{ fontSize: 11 }} />
-                        <Tooltip content={<TempTrendCustomTooltip chartData={chartData} />} />
+                        <Tooltip content={<TempTrendCustomTooltip rawData={rawChartData} />} />
+                        <Legend />
+                        <Area type="monotone" dataKey="tempBelow84" name="<84°C" stackId="1" stroke={COLORS.below84} fill={COLORS.below84} fillOpacity={0.6} />
+                        <Area type="monotone" dataKey="temp84to96" name="84-96°C" stackId="1" stroke={COLORS.range84to96} fill={COLORS.range84to96} fillOpacity={0.6} />
+                        <Area type="monotone" dataKey="temp97Above" name="≥97°C" stackId="1" stroke={COLORS.above97} fill={COLORS.above97} fillOpacity={0.6} />
+                      </AreaChart>
+                    </ResponsiveContainer>
+                  ) : (
+                    <ResponsiveContainer width="100%" height="100%">
+                      <AreaChart data={monthlyChartData}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                        <XAxis dataKey="month" tick={{ fontSize: 10 }} angle={-45} textAnchor="end" height={70} />
+                        <YAxis tick={{ fontSize: 11 }} />
+                        <Tooltip content={<TempMonthlyTooltip rawData={monthlyRawData} />} />
                         <Legend />
                         <Area type="monotone" dataKey="tempBelow84" name="<84°C" stackId="1" stroke={COLORS.below84} fill={COLORS.below84} fillOpacity={0.6} />
                         <Area type="monotone" dataKey="temp84to96" name="84-96°C" stackId="1" stroke={COLORS.range84to96} fill={COLORS.range84to96} fillOpacity={0.6} />
