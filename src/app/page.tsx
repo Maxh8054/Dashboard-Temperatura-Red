@@ -57,7 +57,11 @@ import {
   AlertCircle,
   Clock,
   Lock,
-  Trophy
+  Trophy,
+  ChevronLeft,
+  ChevronRight,
+  Search,
+  Navigation
 } from 'lucide-react';
 import { PasswordModal } from '@/components/PasswordModal';
 
@@ -252,21 +256,24 @@ function TempTrendCustomTooltip({ active, payload, label, rawData }: { active?: 
   );
 }
 
-// Tooltip para modo mensal - mostra breakdown por máquina dentro do mês (todos os anos)
-function TempMonthlyTooltip({ active, payload, label, rawData }: { active?: boolean; payload?: any[]; label?: string; rawData: TempRecord[] }) {
+// Tooltip para modo mensal - mostra breakdown por máquina dentro do mês
+function TempMonthlyTooltip({ active, payload, label, rawData, selectedYear }: { active?: boolean; payload?: any[]; label?: string; rawData: TempRecord[]; selectedYear?: string }) {
   if (!active || !payload || !label) return null;
   
   const monthNames = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
   const monthNum = monthNames.indexOf(label || '') + 1;
   
-  // Filtrar dados do mês (todos os anos)
-  const recordsForMonth = rawData.filter(d => d.parsedDate.getMonth() + 1 === monthNum);
+  // Filtrar dados do mês
+  let recordsForMonth = rawData.filter(d => d.parsedDate.getMonth() + 1 === monthNum);
+  
+  // Se tiver filtro de ano específico, mostrar qual ano
+  const yearLabel = selectedYear && selectedYear !== 'all' ? `/${selectedYear}` : '';
   
   const totalBelow84 = recordsForMonth.reduce((sum, r) => sum + r.tempBelow84, 0);
   const total84to96 = recordsForMonth.reduce((sum, r) => sum + r.temp84to96, 0);
   const total97Above = recordsForMonth.reduce((sum, r) => sum + r.temp97Above, 0);
   
-  // Agrupar por máquina (soma todos os anos daquela máquina naquele mês)
+  // Agrupar por máquina
   const machineData: Record<string, { below84: number; mid: number; above: number }> = {};
   recordsForMonth.forEach(r => {
     if (!machineData[r.machine]) machineData[r.machine] = { below84: 0, mid: 0, above: 0 };
@@ -280,8 +287,8 @@ function TempMonthlyTooltip({ active, payload, label, rawData }: { active?: bool
   
   return (
     <div className="bg-white p-3 border border-slate-200 rounded-lg shadow-lg max-w-xs">
-      <p className="font-semibold text-slate-700 mb-2 border-b pb-1">{label}</p>
-      {yearsWithData.length > 1 && (
+      <p className="font-semibold text-slate-700 mb-2 border-b pb-1">{label}{yearLabel}</p>
+      {yearsWithData.length > 1 && selectedYear === 'all' && (
         <p className="text-xs text-slate-400 mb-2">Anos: {yearsWithData.join(', ')}</p>
       )}
       {Object.keys(machineData).length > 1 && (
@@ -437,17 +444,26 @@ function TemperatureDashboard({
   const [endDate, setEndDate] = useState('');
   const [selectedChartMonth, setSelectedChartMonth] = useState<string>('all');
   const [selectedChartYear, setSelectedChartYear] = useState<string>('all');
+  const [selectedMonthYear, setSelectedMonthYear] = useState<string>('all'); // Ano para modo mensal
   const [tableSearch, setTableSearch] = useState('');
   const [tableMachineFilter, setTableMachineFilter] = useState('all');
   const [tableMonthFilter, setTableMonthFilter] = useState('all');
   const [tableStatusFilter, setTableStatusFilter] = useState('all');
   const [chartViewMode, setChartViewMode] = useState<'date' | 'month'>('date');
   
+  // Estados para navegação ponto a ponto
+  const [selectedIndex, setSelectedIndex] = useState<number>(-1);
+  const [showNavigation, setShowNavigation] = useState(false);
+  const [searchDate, setSearchDate] = useState('');
+  
   useEffect(() => {
     if (availableYears.length > 0 && selectedChartYear === 'all') {
       setSelectedChartYear(availableYears[availableYears.length - 1].value);
     }
-  }, [availableYears, selectedChartYear]);
+    if (availableYears.length > 0 && selectedMonthYear === 'all') {
+      setSelectedMonthYear(availableYears[availableYears.length - 1].value);
+    }
+  }, [availableYears, selectedChartYear, selectedMonthYear]);
   
   const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -623,12 +639,15 @@ function TemperatureDashboard({
     return Object.values(grouped).sort((a, b) => a.date.getTime() - b.date.getTime());
   }, [rawChartData]);
 
-  // Dados agrupados por mês (para modo mensal) - soma TODOS os anos
+  // Dados agrupados por mês (para modo mensal) - com filtro de ano
   const monthlyChartData = useMemo(() => {
     const monthNames = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
     
-    // Usar todos os dados filtrados (sem filtro de ano no modo mensal)
-    const dataToUse = filteredData;
+    // Filtrar por ano se selecionado
+    let dataToUse = filteredData;
+    if (selectedMonthYear !== 'all') {
+      dataToUse = filteredData.filter(d => d.parsedDate.getFullYear() === parseInt(selectedMonthYear));
+    }
     
     // Agrupar por mês (1-12)
     const grouped: Record<number, {
@@ -652,7 +671,7 @@ function TemperatureDashboard({
       };
     }
     
-    // Somar dados por mês (todos os anos)
+    // Somar dados por mês
     dataToUse.forEach(d => {
       const monthNum = d.parsedDate.getMonth() + 1;
       grouped[monthNum].tempBelow84 += d.tempBelow84;
@@ -664,12 +683,67 @@ function TemperatureDashboard({
     });
     
     return Object.values(grouped).sort((a, b) => a.monthNum - b.monthNum);
-  }, [filteredData]);
+  }, [filteredData, selectedMonthYear]);
 
   // Dados brutos para tooltip mensal (para breakdown por máquina)
   const monthlyRawData = useMemo(() => {
+    if (selectedMonthYear !== 'all') {
+      return filteredData.filter(d => d.parsedDate.getFullYear() === parseInt(selectedMonthYear));
+    }
     return filteredData;
-  }, [filteredData]);
+  }, [filteredData, selectedMonthYear]);
+
+  // Funções de navegação ponto a ponto
+  const handlePrevPoint = () => {
+    const data = chartViewMode === 'date' ? chartData : monthlyChartData;
+    if (selectedIndex > 0) {
+      setSelectedIndex(selectedIndex - 1);
+    } else if (selectedIndex === -1 && data.length > 0) {
+      setSelectedIndex(data.length - 1);
+    }
+  };
+
+  const handleNextPoint = () => {
+    const data = chartViewMode === 'date' ? chartData : monthlyChartData;
+    if (selectedIndex < data.length - 1) {
+      setSelectedIndex(selectedIndex + 1);
+    } else if (selectedIndex === -1 && data.length > 0) {
+      setSelectedIndex(0);
+    }
+  };
+
+  const handleSearchDate = () => {
+    if (!searchDate) return;
+    const data = chartViewMode === 'date' ? chartData : monthlyChartData;
+    
+    if (chartViewMode === 'date') {
+      // Buscar por data específica
+      const index = data.findIndex((d: any) => d.displayDate === searchDate || d.dateStr === searchDate);
+      if (index !== -1) {
+        setSelectedIndex(index);
+        setShowNavigation(true);
+      } else {
+        // Tentar buscar por data no formato DD/MM/AAAA
+        const foundIndex = data.findIndex((d: any) => {
+          const dateStr = d.displayDate || d.dateStr || '';
+          return dateStr.includes(searchDate) || searchDate.includes(dateStr);
+        });
+        if (foundIndex !== -1) {
+          setSelectedIndex(foundIndex);
+          setShowNavigation(true);
+        }
+      }
+    } else {
+      // Buscar por mês no modo mensal
+      const monthNames = ['janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho', 'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro'];
+      const searchLower = searchDate.toLowerCase();
+      const monthIndex = monthNames.findIndex(m => m.includes(searchLower) || searchLower.includes(m));
+      if (monthIndex !== -1) {
+        setSelectedIndex(monthIndex);
+        setShowNavigation(true);
+      }
+    }
+  };
 
   const top5HighTemp = useMemo(() => {
     return [...filteredData].sort((a, b) => b.temp97Above - a.temp97Above).slice(0, 5);
@@ -806,41 +880,66 @@ function TemperatureDashboard({
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             <Card className="lg:col-span-2 border border-slate-200 shadow-sm bg-white">
               <CardHeader>
-                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
-                  <div>
-                    <CardTitle className="flex items-center gap-2 text-lg">
-                      <LineChartIcon className="h-5 w-5" style={{ color: '#FF6600' }} />
-                      Tendência de Temperatura
-                    </CardTitle>
-                  </div>
-                  <div className="flex flex-wrap items-center gap-3">
-                    {/* Botão de alternância de modo */}
-                    <div className="flex items-center gap-1 bg-slate-100 rounded-lg p-1">
-                      <Button
-                        size="sm"
-                        variant={chartViewMode === 'date' ? 'default' : 'ghost'}
-                        onClick={() => setChartViewMode('date')}
-                        className={`text-xs h-7 px-3 ${chartViewMode === 'date' ? 'text-white' : 'text-slate-600'}`}
-                        style={chartViewMode === 'date' ? { backgroundColor: '#FF6600' } : {}}
-                      >
-                        Por Data
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant={chartViewMode === 'month' ? 'default' : 'ghost'}
-                        onClick={() => setChartViewMode('month')}
-                        className={`text-xs h-7 px-3 ${chartViewMode === 'month' ? 'text-white' : 'text-slate-600'}`}
-                        style={chartViewMode === 'month' ? { backgroundColor: '#FF6600' } : {}}
-                      >
-                        Por Mês
-                      </Button>
+                <div className="flex flex-col gap-3">
+                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+                    <div>
+                      <CardTitle className="flex items-center gap-2 text-lg">
+                        <LineChartIcon className="h-5 w-5" style={{ color: '#FF6600' }} />
+                        Tendência de Temperatura
+                      </CardTitle>
                     </div>
-                    {/* Filtros de Ano e Mês só aparecem no modo "Por Data" */}
-                    {chartViewMode === 'date' && (
-                      <>
+                    <div className="flex flex-wrap items-center gap-3">
+                      {/* Botão de alternância de modo */}
+                      <div className="flex items-center gap-1 bg-slate-100 rounded-lg p-1">
+                        <Button
+                          size="sm"
+                          variant={chartViewMode === 'date' ? 'default' : 'ghost'}
+                          onClick={() => { setChartViewMode('date'); setSelectedIndex(-1); }}
+                          className={`text-xs h-7 px-3 ${chartViewMode === 'date' ? 'text-white' : 'text-slate-600'}`}
+                          style={chartViewMode === 'date' ? { backgroundColor: '#FF6600' } : {}}
+                        >
+                          Por Data
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant={chartViewMode === 'month' ? 'default' : 'ghost'}
+                          onClick={() => { setChartViewMode('month'); setSelectedIndex(-1); }}
+                          className={`text-xs h-7 px-3 ${chartViewMode === 'month' ? 'text-white' : 'text-slate-600'}`}
+                          style={chartViewMode === 'month' ? { backgroundColor: '#FF6600' } : {}}
+                        >
+                          Por Mês
+                        </Button>
+                      </div>
+                      {/* Filtros de Ano e Mês no modo "Por Data" */}
+                      {chartViewMode === 'date' && (
+                        <>
+                          <div className="flex items-center gap-1">
+                            <span className="text-xs text-slate-500">Ano:</span>
+                            <Select value={selectedChartYear} onValueChange={(v) => { setSelectedChartYear(v); setSelectedIndex(-1); }}>
+                              <SelectTrigger className="w-[90px]"><SelectValue /></SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="all">Todos</SelectItem>
+                                {availableYears.map(y => <SelectItem key={y.value} value={y.value}>{y.label}</SelectItem>)}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                          <div className="flex items-center gap-1">
+                            <span className="text-xs text-slate-500">Mês:</span>
+                            <Select value={selectedChartMonth} onValueChange={(v) => { setSelectedChartMonth(v); setSelectedIndex(-1); }}>
+                              <SelectTrigger className="w-[120px]"><SelectValue /></SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="all">Todos</SelectItem>
+                                {availableMonths.map(m => <SelectItem key={m.value} value={m.value}>{m.label}</SelectItem>)}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                        </>
+                      )}
+                      {/* Filtro de Ano no modo "Por Mês" */}
+                      {chartViewMode === 'month' && (
                         <div className="flex items-center gap-1">
                           <span className="text-xs text-slate-500">Ano:</span>
-                          <Select value={selectedChartYear} onValueChange={setSelectedChartYear}>
+                          <Select value={selectedMonthYear} onValueChange={(v) => { setSelectedMonthYear(v); setSelectedIndex(-1); }}>
                             <SelectTrigger className="w-[90px]"><SelectValue /></SelectTrigger>
                             <SelectContent>
                               <SelectItem value="all">Todos</SelectItem>
@@ -848,22 +947,126 @@ function TemperatureDashboard({
                             </SelectContent>
                           </Select>
                         </div>
+                      )}
+                    </div>
+                  </div>
+                  
+                  {/* Barra de navegação ponto a ponto */}
+                  <div className="flex flex-wrap items-center gap-2 pt-2 border-t">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => setShowNavigation(!showNavigation)}
+                      className={`gap-1 h-7 ${showNavigation ? 'bg-slate-100' : ''}`}
+                    >
+                      <Navigation className="h-3 w-3" />
+                      Navegar
+                    </Button>
+                    
+                    {showNavigation && (
+                      <>
                         <div className="flex items-center gap-1">
-                          <span className="text-xs text-slate-500">Mês:</span>
-                          <Select value={selectedChartMonth} onValueChange={setSelectedChartMonth}>
-                            <SelectTrigger className="w-[120px]"><SelectValue /></SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="all">Todos</SelectItem>
-                              {availableMonths.map(m => <SelectItem key={m.value} value={m.value}>{m.label}</SelectItem>)}
-                            </SelectContent>
-                          </Select>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={handlePrevPoint}
+                            disabled={chartViewMode === 'date' ? chartData.length === 0 : monthlyChartData.length === 0}
+                            className="h-7 w-7 p-0"
+                          >
+                            <ChevronLeft className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={handleNextPoint}
+                            disabled={chartViewMode === 'date' ? chartData.length === 0 : monthlyChartData.length === 0}
+                            className="h-7 w-7 p-0"
+                          >
+                            <ChevronRight className="h-4 w-4" />
+                          </Button>
                         </div>
+                        
+                        <div className="flex items-center gap-1">
+                          <Input
+                            placeholder={chartViewMode === 'date' ? 'DD/MM/AAAA' : 'Mês...'}
+                            value={searchDate}
+                            onChange={(e) => setSearchDate(e.target.value)}
+                            onKeyDown={(e) => e.key === 'Enter' && handleSearchDate()}
+                            className="w-[120px] h-7 text-xs"
+                          />
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={handleSearchDate}
+                            className="h-7 w-7 p-0"
+                          >
+                            <Search className="h-3 w-3" />
+                          </Button>
+                        </div>
+                        
+                        {selectedIndex >= 0 && (
+                          <Badge className="bg-slate-100 text-slate-700 text-xs">
+                            {chartViewMode === 'date' 
+                              ? `${selectedIndex + 1} de ${chartData.length}`
+                              : `${selectedIndex + 1} de ${monthlyChartData.length}`
+                            }
+                          </Badge>
+                        )}
+                        
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => { setSelectedIndex(-1); setSearchDate(''); }}
+                          className="h-7 text-xs text-slate-500"
+                        >
+                          Limpar
+                        </Button>
                       </>
                     )}
                   </div>
                 </div>
               </CardHeader>
               <CardContent>
+                {/* Info do ponto selecionado */}
+                {showNavigation && selectedIndex >= 0 && (
+                  <div className="mb-3 p-3 bg-slate-50 rounded-lg border">
+                    {chartViewMode === 'date' && chartData[selectedIndex] && (
+                      <>
+                        <p className="font-semibold text-slate-700 mb-2">
+                          📅 {chartData[selectedIndex].displayDate}
+                          {chartData[selectedIndex].machines?.length > 1 && (
+                            <span className="text-xs text-slate-500 ml-2">
+                              ({chartData[selectedIndex].machines.length} máquinas)
+                            </span>
+                          )}
+                        </p>
+                        <div className="flex gap-4 text-sm">
+                          <span className="text-emerald-600 font-medium">&lt;84°C: {chartData[selectedIndex].tempBelow84.toFixed(1)}h</span>
+                          <span className="text-amber-600 font-medium">84-96°C: {chartData[selectedIndex].temp84to96.toFixed(1)}h</span>
+                          <span className="text-red-600 font-medium">≥97°C: {chartData[selectedIndex].temp97Above.toFixed(1)}h</span>
+                        </div>
+                      </>
+                    )}
+                    {chartViewMode === 'month' && monthlyChartData[selectedIndex] && (
+                      <>
+                        <p className="font-semibold text-slate-700 mb-2">
+                          📅 {monthlyChartData[selectedIndex].month}
+                          {monthlyChartData[selectedIndex].machines?.length > 1 && (
+                            <span className="text-xs text-slate-500 ml-2">
+                              ({monthlyChartData[selectedIndex].machines.length} máquinas)
+                            </span>
+                          )}
+                        </p>
+                        <div className="flex gap-4 text-sm">
+                          <span className="text-emerald-600 font-medium">&lt;84°C: {monthlyChartData[selectedIndex].tempBelow84.toFixed(1)}h</span>
+                          <span className="text-amber-600 font-medium">84-96°C: {monthlyChartData[selectedIndex].temp84to96.toFixed(1)}h</span>
+                          <span className="text-red-600 font-medium">≥97°C: {monthlyChartData[selectedIndex].temp97Above.toFixed(1)}h</span>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                )}
+                
                 <div className="h-[300px]">
                   {chartViewMode === 'date' && chartData.length === 0 ? (
                     <div className="h-full flex items-center justify-center text-slate-400"><p>Selecione filtros para ver os dados</p></div>
@@ -886,7 +1089,7 @@ function TemperatureDashboard({
                         <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
                         <XAxis dataKey="month" tick={{ fontSize: 10 }} angle={-45} textAnchor="end" height={70} />
                         <YAxis tick={{ fontSize: 11 }} />
-                        <Tooltip content={<TempMonthlyTooltip rawData={monthlyRawData} />} />
+                        <Tooltip content={<TempMonthlyTooltip rawData={monthlyRawData} selectedYear={selectedMonthYear} />} />
                         <Legend />
                         <Area type="monotone" dataKey="tempBelow84" name="<84°C" stackId="1" stroke={COLORS.below84} fill={COLORS.below84} fillOpacity={0.6} />
                         <Area type="monotone" dataKey="temp84to96" name="84-96°C" stackId="1" stroke={COLORS.range84to96} fill={COLORS.range84to96} fillOpacity={0.6} />
