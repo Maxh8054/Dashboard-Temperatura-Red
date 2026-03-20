@@ -42,7 +42,8 @@ import {
   Area,
   PieChart,
   Pie,
-  Cell
+  Cell,
+  ReferenceLine
 } from 'recharts';
 import { 
   Thermometer, 
@@ -1027,7 +1028,7 @@ function TemperatureDashboard({
                 </div>
               </CardHeader>
               <CardContent>
-                {/* Info do ponto selecionado */}
+                {/* Info do ponto selecionado com breakdown por máquina */}
                 {showNavigation && selectedIndex >= 0 && (
                   <div className="mb-3 p-3 bg-slate-50 rounded-lg border">
                     {chartViewMode === 'date' && chartData[selectedIndex] && (
@@ -1040,6 +1041,35 @@ function TemperatureDashboard({
                             </span>
                           )}
                         </p>
+                        
+                        {/* Breakdown por máquina */}
+                        {chartViewMode === 'date' && (() => {
+                          const selectedDate = chartData[selectedIndex].displayDate;
+                          const machineData: Record<string, { below84: number; mid: number; above: number }> = {};
+                          rawChartData.filter(d => d.dateStr === selectedDate).forEach(r => {
+                            if (!machineData[r.machine]) machineData[r.machine] = { below84: 0, mid: 0, above: 0 };
+                            machineData[r.machine].below84 += r.tempBelow84;
+                            machineData[r.machine].mid += r.temp84to96;
+                            machineData[r.machine].above += r.temp97Above;
+                          });
+                          
+                          return Object.keys(machineData).length > 1 && (
+                            <div className="mb-2 p-2 bg-white rounded border">
+                              <p className="text-xs font-medium text-slate-500 mb-1">Por Máquina:</p>
+                              {Object.entries(machineData).map(([machine, data]) => (
+                                <div key={machine} className="text-xs mb-1 flex items-center gap-2">
+                                  <span className="font-medium w-16" style={{ color: MACHINE_COLORS[machine] || '#FF6600' }}>{machine}</span>
+                                  <span className="text-emerald-600">{data.below84.toFixed(1)}h</span>
+                                  <span className="text-slate-300">|</span>
+                                  <span className="text-amber-600">{data.mid.toFixed(1)}h</span>
+                                  <span className="text-slate-300">|</span>
+                                  <span className="text-red-600">{data.above.toFixed(1)}h</span>
+                                </div>
+                              ))}
+                            </div>
+                          );
+                        })()}
+                        
                         <div className="flex gap-4 text-sm">
                           <span className="text-emerald-600 font-medium">&lt;84°C: {chartData[selectedIndex].tempBelow84.toFixed(1)}h</span>
                           <span className="text-amber-600 font-medium">84-96°C: {chartData[selectedIndex].temp84to96.toFixed(1)}h</span>
@@ -1051,12 +1081,42 @@ function TemperatureDashboard({
                       <>
                         <p className="font-semibold text-slate-700 mb-2">
                           📅 {monthlyChartData[selectedIndex].month}
+                          {selectedMonthYear !== 'all' && <span className="text-xs text-slate-500 ml-1">/{selectedMonthYear}</span>}
                           {monthlyChartData[selectedIndex].machines?.length > 1 && (
                             <span className="text-xs text-slate-500 ml-2">
                               ({monthlyChartData[selectedIndex].machines.length} máquinas)
                             </span>
                           )}
                         </p>
+                        
+                        {/* Breakdown por máquina */}
+                        {(() => {
+                          const monthNum = monthlyChartData[selectedIndex].monthNum;
+                          const machineData: Record<string, { below84: number; mid: number; above: number }> = {};
+                          monthlyRawData.filter(d => d.parsedDate.getMonth() + 1 === monthNum).forEach(r => {
+                            if (!machineData[r.machine]) machineData[r.machine] = { below84: 0, mid: 0, above: 0 };
+                            machineData[r.machine].below84 += r.tempBelow84;
+                            machineData[r.machine].mid += r.temp84to96;
+                            machineData[r.machine].above += r.temp97Above;
+                          });
+                          
+                          return Object.keys(machineData).length > 1 && (
+                            <div className="mb-2 p-2 bg-white rounded border">
+                              <p className="text-xs font-medium text-slate-500 mb-1">Por Máquina:</p>
+                              {Object.entries(machineData).map(([machine, data]) => (
+                                <div key={machine} className="text-xs mb-1 flex items-center gap-2">
+                                  <span className="font-medium w-16" style={{ color: MACHINE_COLORS[machine] || '#FF6600' }}>{machine}</span>
+                                  <span className="text-emerald-600">{data.below84.toFixed(1)}h</span>
+                                  <span className="text-slate-300">|</span>
+                                  <span className="text-amber-600">{data.mid.toFixed(1)}h</span>
+                                  <span className="text-slate-300">|</span>
+                                  <span className="text-red-600">{data.above.toFixed(1)}h</span>
+                                </div>
+                              ))}
+                            </div>
+                          );
+                        })()}
+                        
                         <div className="flex gap-4 text-sm">
                           <span className="text-emerald-600 font-medium">&lt;84°C: {monthlyChartData[selectedIndex].tempBelow84.toFixed(1)}h</span>
                           <span className="text-amber-600 font-medium">84-96°C: {monthlyChartData[selectedIndex].temp84to96.toFixed(1)}h</span>
@@ -1081,6 +1141,15 @@ function TemperatureDashboard({
                         <Area type="monotone" dataKey="tempBelow84" name="<84°C" stackId="1" stroke={COLORS.below84} fill={COLORS.below84} fillOpacity={0.6} />
                         <Area type="monotone" dataKey="temp84to96" name="84-96°C" stackId="1" stroke={COLORS.range84to96} fill={COLORS.range84to96} fillOpacity={0.6} />
                         <Area type="monotone" dataKey="temp97Above" name="≥97°C" stackId="1" stroke={COLORS.above97} fill={COLORS.above97} fillOpacity={0.6} />
+                        {/* Linha indicadora de posição */}
+                        {showNavigation && selectedIndex >= 0 && chartData[selectedIndex] && (
+                          <ReferenceLine 
+                            x={chartData[selectedIndex].displayDate} 
+                            stroke="#FF6600" 
+                            strokeWidth={2}
+                            strokeDasharray="5 5"
+                          />
+                        )}
                       </AreaChart>
                     </ResponsiveContainer>
                   ) : (
@@ -1094,6 +1163,15 @@ function TemperatureDashboard({
                         <Area type="monotone" dataKey="tempBelow84" name="<84°C" stackId="1" stroke={COLORS.below84} fill={COLORS.below84} fillOpacity={0.6} />
                         <Area type="monotone" dataKey="temp84to96" name="84-96°C" stackId="1" stroke={COLORS.range84to96} fill={COLORS.range84to96} fillOpacity={0.6} />
                         <Area type="monotone" dataKey="temp97Above" name="≥97°C" stackId="1" stroke={COLORS.above97} fill={COLORS.above97} fillOpacity={0.6} />
+                        {/* Linha indicadora de posição */}
+                        {showNavigation && selectedIndex >= 0 && monthlyChartData[selectedIndex] && (
+                          <ReferenceLine 
+                            x={monthlyChartData[selectedIndex].month} 
+                            stroke="#FF6600" 
+                            strokeWidth={2}
+                            strokeDasharray="5 5"
+                          />
+                        )}
                       </AreaChart>
                     </ResponsiveContainer>
                   )}
